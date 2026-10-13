@@ -18,7 +18,7 @@ const PROD = process.env.NODE_ENV === 'production';
 const COOKIE = 'mv_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const JWT_SECRET = process.env.JWT_SECRET;
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const INDEX_FILE = path.join(__dirname, 'index.html');
 
 if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET) < 32) {
   console.error('Set JWT_SECRET to a random secret of at least 32 characters in Render Environment.');
@@ -45,7 +45,7 @@ app.use(helmet({
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 app.use(cookieParser());
-app.use(express.static(PUBLIC_DIR, { index: false, maxAge: PROD ? '1h' : 0 }));
+// This project keeps index.html beside server.js; do not expose the repository root as static files.
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many login attempts. Please wait a little and try again.' } });
 const writeLimiter = rateLimit({ windowMs: 60 * 1000, limit: 25, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'You are posting too quickly. Please wait a moment.' } });
@@ -363,6 +363,6 @@ app.get('/:username', async (req, res, next) => {
 });
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
-app.get(/.*/, (req, res, next) => { if (req.path.startsWith('/api/')) return next(); res.sendFile(path.join(PUBLIC_DIR, 'index.html')); });
+app.get(/.*/, (req, res, next) => { if (req.path.startsWith('/api/')) return next(); res.sendFile(INDEX_FILE, (err) => { if (err && !res.headersSent) next(err); }); });
 app.use((err, req, res, next) => { console.error('Unhandled server error:', err); if (res.headersSent) return next(err); res.status(500).json({ error: 'An unexpected server error occurred.' }); });
 app.listen(PORT, () => console.log(`MediaVerse listening on port ${PORT}; session lifetime is 30 days.`));

@@ -10,7 +10,6 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 
 const app = express();
@@ -20,11 +19,6 @@ const COOKIE = 'mv_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const JWT_SECRET = process.env.JWT_SECRET;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-// Prefer public/index.html, but also support index.html in the project root.
-// Static assets are still served only from /public for safety.
-const INDEX_FILE = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'))
-  ? path.join(PUBLIC_DIR, 'index.html')
-  : path.join(__dirname, 'index.html');
 
 if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET) < 32) {
   console.error('Set JWT_SECRET to a random secret of at least 32 characters in Render Environment.');
@@ -166,6 +160,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) || Number.isNaN(Date.parse(birthday)) || birthday > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Enter a valid birthday that is not in the future.' });
     const email = str(req.body.email, 254, 'Email');
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address or leave it blank.' });
+    const gender = str(req.body.gender, 10, 'Gender', true).toLowerCase();
+    if (!['male', 'female'].includes(gender)) return res.status(400).json({ error: 'Choose Male or Female for gender.' });
     const usernameKey = username.toLowerCase().replace(/\s+/g, ' ');
     const indexRef = db.collection('usernameIndex').doc(encodeURIComponent(usernameKey));
     const userRef = db.collection('users').doc();
@@ -174,7 +170,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     await db.runTransaction(async tx => {
       const exists = await tx.get(indexRef);
       if (exists.exists) throw new Error('That username is already taken. Choose another one.');
-      tx.create(userRef, { username, usernameKey, passwordHash, birthday, email: email || null, bio: '', createdAt: now, signupAt: now, lastLoginAt: now, loginHistory: [{ at: now, type: 'signup', country: countryFromRequest(req) }], suspendedUntil: null });
+      tx.create(userRef, { username, usernameKey, passwordHash, birthday, gender, email: email || null, bio: '', createdAt: now, signupAt: now, lastLoginAt: now, loginHistory: [{ at: now, type: 'signup', country: countryFromRequest(req) }], suspendedUntil: null });
       tx.create(indexRef, { uid: userRef.id });
     });
     const user = { id: userRef.id, username };
@@ -367,17 +363,6 @@ app.get('/:username', async (req, res, next) => {
 });
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
-app.get(/.*/, (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  if (!fs.existsSync(INDEX_FILE)) {
-    return res.status(503).type('text').send('MediaVerse homepage is missing. Add index.html to the public folder or project root.');
-  }
-  res.sendFile(INDEX_FILE, err => {
-    if (err && !res.headersSent) {
-      console.error('Could not send homepage:', err.message);
-      res.status(500).type('text').send('Could not load the MediaVerse homepage.');
-    }
-  });
-});
+app.get(/.*/, (req, res, next) => { if (req.path.startsWith('/api/')) return next(); res.sendFile(path.join(PUBLIC_DIR, 'index.html')); });
 app.use((err, req, res, next) => { console.error('Unhandled server error:', err); if (res.headersSent) return next(err); res.status(500).json({ error: 'An unexpected server error occurred.' }); });
 app.listen(PORT, () => console.log(`MediaVerse listening on port ${PORT}; session lifetime is 30 days.`));
